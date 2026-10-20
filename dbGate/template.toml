@@ -1,0 +1,13 @@
+[variables]
+main_domain = "${domain}"
+admin_password = "${password:24}"
+
+[config]
+[[config.domains]]
+serviceName = "dbgate"
+port = 3000
+host = "${main_domain}"
+
+[config.env]
+DBGATE_LOGIN = "admin"
+DBGATE_PASSWORD = "${admin_password}"

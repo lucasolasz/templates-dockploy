@@ -1,0 +1,136 @@
+# n8n em modo fila (editor + webhooks + webhook MCP + worker) + Postgres (pgvector) + Redis
+# Template Dokploy. Regras: sem container_name, sem ports (usar expose), sem networks.
+
+# Variáveis compartilhadas por TODOS os containers do n8n (mesma imagem, mesma chave).
+x-n8n-env: &n8n-env
+  # Banco
+  DB_TYPE: postgresdb
+  DB_POSTGRESDB_HOST: postgres
+  DB_POSTGRESDB_PORT: "5432"
+  DB_POSTGRESDB_DATABASE: ${POSTGRES_DB}
+  DB_POSTGRESDB_USER: ${POSTGRES_USER}
+  DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+  # Chave de criptografia: precisa ser IDÊNTICA em todos os containers
+  N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+  # Endereços (N8N_HOST recebe só o hostname, sem https://)
+  N8N_HOST: ${N8N_EDITOR_HOST}
+  N8N_EDITOR_BASE_URL: https://${N8N_EDITOR_HOST}
+  N8N_PROTOCOL: https
+  WEBHOOK_URL: https://${N8N_WEBHOOK_HOST}/
+  NODE_ENV: production
+  # Modo fila (Redis)
+  EXECUTIONS_MODE: queue
+  QUEUE_BULL_REDIS_HOST: redis
+  QUEUE_BULL_REDIS_PORT: "6379"
+  QUEUE_BULL_REDIS_PASSWORD: ${REDIS_PASSWORD}
+  QUEUE_BULL_REDIS_DB: "2"
+  OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS: "true"
+  # Runners / código
+  N8N_RUNNERS_ENABLED: "true"
+  N8N_RUNNERS_MODE: internal
+  N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+  N8N_NODE_PATH: /home/node/.n8n/nodes
+  NODE_FUNCTION_ALLOW_EXTERNAL: "*"
+  # Histórico de execuções (sem aspas no valor, para o n8n reconhecer)
+  EXECUTIONS_DATA_PRUNE: "true"
+  EXECUTIONS_DATA_MAX_AGE: ${EXECUTIONS_DATA_MAX_AGE}
+  # Fuso horário
+  GENERIC_TIMEZONE: ${GENERIC_TIMEZONE}
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # Editor (interface) + gatilhos agendados. Roda as migrações do banco ao subir.
+  n8n-editor:
+    image: n8nio/n8n:${N8N_VERSION}
+    restart: unless-stopped
+    environment: *n8n-env
+    volumes:
+      - n8n_data:/home/node/.n8n
+    expose:
+      - 5678
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  # Processador de webhooks (recebe /webhook/... e coloca na fila)
+  n8n-webhook:
+    image: n8nio/n8n:${N8N_VERSION}
+    restart: unless-stopped
+    command: webhook
+    environment: *n8n-env
+    expose:
+      - 5678
+    deploy:
+      replicas: ${N8N_WEBHOOK_REPLICAS}
+    depends_on:
+      n8n-editor:
+        condition: service_healthy
+
+  # Processador de webhook dedicado ao MCP (conexões longas). Mantenha 1 réplica.
+  n8n-mcp-webhook:
+    image: n8nio/n8n:${N8N_VERSION}
+    restart: unless-stopped
+    command: webhook
+    environment: *n8n-env
+    expose:
+      - 5678
+    deploy:
+      replicas: 1
+    depends_on:
+      n8n-editor:
+        condition: service_healthy
+
+  # Worker: executa os workflows puxando da fila. Sem domínio público.
+  n8n-worker:
+    image: n8nio/n8n:${N8N_VERSION}
+    restart: unless-stopped
+    command: worker --concurrency=${N8N_WORKER_CONCURRENCY}
+    environment: *n8n-env
+    deploy:
+      replicas: ${N8N_WORKER_REPLICAS}
+    depends_on:
+      n8n-editor:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  n8n_data:

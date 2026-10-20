@@ -1,0 +1,15 @@
+version: "3.8"
+services:
+  dbgate:
+    image: dbgate/dbgate:latest
+    restart: unless-stopped
+    expose:
+      - 3000
+    environment:
+      LOGIN: ${DBGATE_LOGIN}
+      PASSWORD: ${DBGATE_PASSWORD}
+    volumes:
+      - dbgate-data:/root/.dbgate
+
+volumes:
+  dbgate-data: {}

@@ -1,0 +1,59 @@
+# Template Dokploy: n8n (fila + webhooks + MCP + worker) + Postgres/pgvector + Redis
+
+[variables]
+# Domínios (ajuste se quiser outros nomes)
+editor_domain = "n8n-editor.ltech.app.br"
+webhook_domain = "n8n-webhook.ltech.app.br"
+mcp_domain = "n8n-mcp-wh.ltech.app.br"
+
+# Segredos gerados automaticamente
+postgres_password = "${password:32}"
+redis_password = "${password:32}"
+
+# ATENÇÃO (migração): para manter as credenciais do n8n atual legíveis, depois de
+# importar troque na aba Environment pela chave que já está em uso:
+#   N8N_ENCRYPTION_KEY  -> a mesma chave do n8n atual
+# Se for instalação nova, a chave gerada serve. GUARDE-A fora do servidor.
+n8n_encryption_key = "${base64:32}"
+
+[config]
+mounts = []
+
+[[config.domains]]
+serviceName = "n8n-editor"
+port = 5678
+host = "${editor_domain}"
+
+[[config.domains]]
+serviceName = "n8n-webhook"
+port = 5678
+host = "${webhook_domain}"
+
+[[config.domains]]
+serviceName = "n8n-mcp-webhook"
+port = 5678
+host = "${mcp_domain}"
+path = "/mcp"
+
+[config.env]
+# Versão fixa do n8n, aplicada nos 4 serviços (editor, webhook, mcp-webhook, worker).
+# O n8n não aceita downgrade do banco: não use versão menor que a do banco restaurado.
+N8N_VERSION = "2.43.5"
+N8N_EDITOR_HOST = "${editor_domain}"
+N8N_WEBHOOK_HOST = "${webhook_domain}"
+N8N_ENCRYPTION_KEY = "${n8n_encryption_key}"
+
+# Escala
+N8N_WEBHOOK_REPLICAS = "2"
+N8N_WORKER_REPLICAS = "1"
+N8N_WORKER_CONCURRENCY = "10"
+
+# Histórico e fuso
+EXECUTIONS_DATA_MAX_AGE = "336"
+GENERIC_TIMEZONE = "America/Sao_Paulo"
+
+# Banco e fila
+POSTGRES_USER = "postgres"
+POSTGRES_DB = "n8n"
+POSTGRES_PASSWORD = "${postgres_password}"
+REDIS_PASSWORD = "${redis_password}"

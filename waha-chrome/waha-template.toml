@@ -1,0 +1,24 @@
+# Template Dokploy: WAHA (WhatsApp HTTP API)
+
+[variables]
+waha_domain = "waha.ltech.app.br"
+waha_dashboard_password = "${password:32}"
+
+# ATENÇÃO (migração): se o WAHA atual já é usado pelos seus workflows, depois de
+# importar troque WAHA_API_KEY na aba Environment pela API key que já está em uso.
+waha_api_key = "${password:32}"
+
+[config]
+mounts = []
+
+[[config.domains]]
+serviceName = "waha"
+port = 3000
+host = "${waha_domain}"
+
+[config.env]
+WAHA_VERSION = "chrome"
+WAHA_API_KEY = "${waha_api_key}"
+WAHA_DASHBOARD_USERNAME = "admin"
+WAHA_DASHBOARD_PASSWORD = "${waha_dashboard_password}"
+WHATSAPP_SWAGGER_USERNAME = "admin"
