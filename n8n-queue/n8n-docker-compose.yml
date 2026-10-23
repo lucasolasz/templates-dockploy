@@ -1,5 +1,6 @@
 # n8n em modo fila (editor + webhooks + webhook MCP + worker) + Postgres (pgvector) + Redis
 # Template Dokploy. Regras: sem container_name, sem ports (usar expose), sem networks.
+# Volume n8n_data compartilhado por TODOS os containers do n8n (nós da comunidade e config).
 
 # Variáveis compartilhadas por TODOS os containers do n8n (mesma imagem, mesma chave).
 x-n8n-env: &n8n-env
@@ -16,6 +17,8 @@ x-n8n-env: &n8n-env
   N8N_HOST: ${N8N_EDITOR_HOST}
   N8N_EDITOR_BASE_URL: https://${N8N_EDITOR_HOST}
   N8N_PROTOCOL: https
+  # Atrás do Traefik (1 proxy): n8n interpreta corretamente o IP de origem
+  N8N_PROXY_HOPS: "1"
   WEBHOOK_URL: https://${N8N_WEBHOOK_HOST}/
   NODE_ENV: production
   # Modo fila (Redis)
@@ -31,11 +34,11 @@ x-n8n-env: &n8n-env
   N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
   N8N_NODE_PATH: /home/node/.n8n/nodes
   NODE_FUNCTION_ALLOW_EXTERNAL: "*"
-  # Histórico de execuções (sem aspas no valor, para o n8n reconhecer)
+  # Histórico de execuções (EXECUTIONS_DATA_MAX_AGE é em HORAS: 336 = 14 dias)
   EXECUTIONS_DATA_PRUNE: "true"
-  EXECUTIONS_DATA_MAX_AGE: ${EXECUTIONS_DATA_MAX_AGE}
+  EXECUTIONS_DATA_MAX_AGE: ${EXECUTIONS_DATA_MAX_AGE:-336}
   # Fuso horário
-  GENERIC_TIMEZONE: ${GENERIC_TIMEZONE}
+  GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-America/Sao_Paulo}
 
 services:
   postgres:
@@ -96,10 +99,12 @@ services:
     restart: unless-stopped
     command: webhook
     environment: *n8n-env
+    volumes:
+      - n8n_data:/home/node/.n8n
     expose:
       - 5678
     deploy:
-      replicas: ${N8N_WEBHOOK_REPLICAS}
+      replicas: ${N8N_WEBHOOK_REPLICAS:-1}
     depends_on:
       n8n-editor:
         condition: service_healthy
@@ -110,6 +115,8 @@ services:
     restart: unless-stopped
     command: webhook
     environment: *n8n-env
+    volumes:
+      - n8n_data:/home/node/.n8n
     expose:
       - 5678
     deploy:
@@ -122,10 +129,12 @@ services:
   n8n-worker:
     image: n8nio/n8n:${N8N_VERSION}
     restart: unless-stopped
-    command: worker --concurrency=${N8N_WORKER_CONCURRENCY}
+    command: worker --concurrency=${N8N_WORKER_CONCURRENCY:-10}
     environment: *n8n-env
+    volumes:
+      - n8n_data:/home/node/.n8n
     deploy:
-      replicas: ${N8N_WORKER_REPLICAS}
+      replicas: ${N8N_WORKER_REPLICAS:-1}
     depends_on:
       n8n-editor:
         condition: service_healthy
